@@ -18,7 +18,6 @@ def load_data(base_dir):
         image = image[:, :, :3] # RGBA -> RGB (4채널 제거)
 
         c2w = torch.tensor(frame["transform_matrix"]).float()
-        c2w[0:3, 1:3] *= -1 # Blender -> OpenCV
 
         H, W = image.shape[:2]
         camera_angle_x = meta['camera_angle_x']

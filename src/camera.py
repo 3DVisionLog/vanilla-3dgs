@@ -1,33 +1,32 @@
 import torch
 import numpy as np
         
-def get_look_at(eye_pos, center, up):
+def get_c2w_from_lookat(eye, center, up):
     """
-    카메라가 eye_pos에서 center를 바라보게 하는 View Matrix 생성
+    y   z      world(center)에서 카메라(eye)를
+    |  /       바라보는 pose matrix 생성!!
+    | /        즉, 카메라가 월드 중 어디에 있나
+    o ㅡㅡㅡ x (w2c는 view matrix 얜 world를 카메라로 담기)
     """
-    z_axis = eye_pos - center
-    z_axis = z_axis / torch.norm(z_axis)
-    
-    x_axis = torch.cross(up, z_axis, dim=0)
-    x_axis = x_axis / torch.norm(x_axis)
-    
-    y_axis = torch.cross(z_axis, x_axis, dim=0)
-    y_axis = y_axis / torch.norm(y_axis)
-    
-    # R (3x3)
-    R = torch.stack([x_axis, y_axis, z_axis], dim=0)
-    
-    # t (3x1) = -R * eye
-    t = -torch.matmul(R, eye_pos.unsqueeze(1)).squeeze()
-    
-    # 4x4 Matrix
-    view_mat = torch.eye(4, device=eye_pos.device)
-    view_mat[:3, :3] = R
-    view_mat[:3, 3] = t
-    
-    return view_mat
+    z_axis = center - eye # 카메라 시선(center->eye)의 반대
+    z_axis = z_axis / torch.norm(z)
 
-def get_360_poses(n_frame=30, elevation=30, radius=4.0, device="cpu"):
+    x_axis = torch.cross(z_axis, up, dim=0)
+    x_axis = x_axis / torch.norm(x_axis)
+
+    y_axis = torch.cross(x_axis, z_axis, dim=0)
+
+    R = torch.stack([x_axis, y_axis, z_axis], dim=1)
+    t = eye # c2w에서의 평행이동 == 걍 카메라 위치
+    # => c2w는 연산이 쉬임 걍 [R|t] 잖아
+
+    c2w = torch.eye(4, device=eye.device)
+    c2w[:3, :3] = R
+    c2w[:3, 3] = t
+
+    return c2w
+
+def get_360_poses(n_frames=30, elevation=30, radius=4.0, device="cpu"):
     poses = []
     up = torch.tensor([0.0, 0.0, 1.0], device=device)
     center = torch.tensor([0.0, 0.0, 0.0], device=device)
@@ -43,7 +42,7 @@ def get_360_poses(n_frame=30, elevation=30, radius=4.0, device="cpu"):
             radius * np.sin(phi)
         ], device=device).float()
 
-        c2w = get_look_at(eye_pos, center, up)
+        c2w = get_c2w_from_lookat(eye_pos, center, up)
 
         poses.append(c2w)
 
