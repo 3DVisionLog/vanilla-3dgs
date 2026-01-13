@@ -1,14 +1,16 @@
 import torch
 import numpy as np
         
-def get_c2w_for_nerf(eye, center, up):
+def get_c2w_opengl(eye, center, up):
     """
-    y   z      world(center)에서 카메라(eye)를
+    y   z      물체(center)에서 카메라(eye)를
     |  /       바라보는 pose matrix 생성!!
     | /        즉, 카메라가 월드 중 어디에 있나
     o ㅡㅡㅡ x (w2c는 view matrix 얜 world를 카메라로 담기)
     """
-    z_axis = -(center - eye) # 카메라 시선(center->eye)의 반대
+    # 카메라 시선(center<-eye)의 반대
+    # 즉.. 카메라가 찍고 있는 방향을 -z로 하겠다
+    z_axis = -(center - eye)
     z_axis = z_axis / torch.norm(z_axis)
 
     x_axis = torch.cross(z_axis, up, dim=0)
@@ -42,7 +44,7 @@ def get_360_poses(n_frames=30, elevation=30, radius=4.0, device="cpu"):
             radius * np.sin(phi)
         ], device=device).float()
 
-        c2w = get_c2w_for_nerf(eye_pos, center, up)
+        c2w = get_c2w_opengl(eye_pos, center, up)
 
         poses.append(c2w)
 
