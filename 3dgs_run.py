@@ -9,7 +9,7 @@ from PIL import Image
 
 from src.utils import set_seed
 from src.data_loader import load_data
-from src.gs.model import GaussianModel
+from src.gs.gs_model import GaussianModel
 from src.gs.render import gaussians_to_screen, render
 from src.gs.ssim import ssim
 from src.camera import get_360_poses
