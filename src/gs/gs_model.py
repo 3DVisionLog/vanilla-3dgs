@@ -19,6 +19,11 @@ class GaussianModel(nn.Module):
 
         # 원래 SH 써야하는데 일단은 그냥 rgb
         self.rgb = nn.Parameter(torch.rand(num_points, 3))
+        
+        # RGB(3채널) x 4개 계수(Degree 0 ~ 1)
+        
+        self.degree = degree
+        self.sh_coeffs = nn.Parameter(torch.rand(num_points, 3, (degree+1)**2))
 
     def build_rotation(self, q): # 쿼터니언 -> 회전 행렬 (R) 변환
         q = torch.nn.functional.normalize(q) # 쿼터니언 정규화 (Unit Quaternion)
@@ -30,6 +35,24 @@ class GaussianModel(nn.Module):
             2*(x*z - r*y), 2*(y*z + r*x), 1 - 2*(x*x + y*y)
         ], dim=-1).reshape(-1, 3, 3)
     
+    def eval_sh(self, sh_coeffs, dirs, degree):
+        # SH 상수 (Basis functions)
+        C0 = 0.28209479177387814
+        C1 = 0.4886025119029199
+
+        # Degree 0 (상수항 - 모든 방향에서 똑같음)
+        result = C0 * sh_coeffs[:, :, 0]
+
+        if degree > 0:
+            x, y, z = dirs[:, 0], dirs[:, 1], dirs[:, 2]
+
+            # Degree 1 (방향항 - x, y, z 방향에 따라 달라짐)
+            result = result - C1 * y.unsqueeze(1) * sh_coeffs[:, :, 1] + \
+                            C1 * z.unsqueeze(1) * sh_coeffs[:, :, 2] - \
+                            C1 * x.unsqueeze(1) * sh_coeffs[:, :, 3]
+            
+        return result
+    
     def forward(self, view_dirs):
         """
         init에서 sigmoid, exp 해줬더니 학습에서 터짐..
@@ -37,14 +60,17 @@ class GaussianModel(nn.Module):
         """
         opacity = torch.sigmoid(self.opacity_logit) # 불투명도는 0~1 사이 값
         scale = torch.exp(self.scale_log) # 반지름은 양수만 가능
-        rgb = torch.sigmoid(self.rgb)
+
+        # SH까지 고려해서 색 계산
+        rgb = torch.sigmoid(
+            self.eval_sh(self.sh_coeffs, view_dirs, self.degree)
+        )
 
         # Σ = (RS)(RS)^{T}
         S = torch.diag_embed(scale)  # RS 계산하려고 3x3 대각행렬 만듬
         R = self.build_rotation(self.rot_quat)
         cov3d = (R@S) @ (R@S).transpose(1, 2) # 지금 전부 (n, r, l) 일케 3차원이라 .T 쓰면 안됨
 
-        # return self.xyz, cov3d, rgb, opacity
         return {
             "xyz": self.xyz,
             "cov3d": cov3d,
