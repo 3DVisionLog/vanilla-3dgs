@@ -50,17 +50,34 @@ def main(config_path, data_dir=None):
         gamma=0.5
     )
 
+    cam_centers = []
+    for data in datas:
+        # c2w의 4번째 열이 카메라 위치
+        cam_centers.append(data["c2w"][:3, 3]) 
+
+    cam_centers = torch.stack(cam_centers) # (N_cams, 3)
+
+    # 2. 카메라들이 분포한 구(Sphere)의 반지름을 구합니다.
+    center = cam_centers.mean(dim=0)
+    dist = (cam_centers - center).norm(dim=1)
+    scene_radius = dist.max().item()
+
+    # 3. 이걸 scene_extent로 고정합니다. (보통 1.0 ~ 4.0 정도 나옴)
+    scene_extent = scene_radius * 1.1 
+    print(f"🎯 고정된 Scene Extent: {scene_extent:.4f}")
+
+
     model.train()
     train_loss = []
     print("학습 시작!")
-    for step in tqdm(range(3000), desc="Training..."): # 1000번 반복
+    for step in tqdm(range(config["n_iters"]), desc="Training..."): # 1000번 반복
+        # debug_coordinate_system(model, datas, H, W, focal)
         optimizer.zero_grad()
 
         img_i = np.random.randint(0, len(datas))
         target = datas[img_i]["image"].to(device) # (H, W, 3)
         c2w = datas[img_i]["c2w"].to(device)      # (4, 4)
-        c2w[0:3, 1:3] *= -1 # Blender -> OpenCV 좌표계 변환 (Y, Z 뒤집기)
-
+        # c2w[0:3, 1:3] *= -1
         w2c = torch.linalg.inv(c2w) # World -> Camera (역행렬)
 
         # World 좌표계 기준 방향 벡터 계산(점 위치 - 카메라 위치)
@@ -95,21 +112,60 @@ def main(config_path, data_dir=None):
 
         l1_loss = (img - target).abs().mean()
         ssim_loss = 1.0 - ssim(img_permuted, target_permuted)
-
         total_loss = (1.0 - config["lambda"]) * l1_loss + config["lambda"] * ssim_loss
 
         # (4) Backward
         total_loss.backward()
         optimizer.step()
         scheduler.step()
-
+    
         train_loss.append(total_loss.item())
 
+        if step % 200 == 0 and 0.1*config["n_iters"] < step < 0.5*config["n_iters"]:
+            # debug1(model, w2c, g2d, W, H)
+            print(f"Step {step}: 점 개수 = {model.xyz.shape[0]}")
+            # ranges = model.xyz.max(dim=0).values - model.xyz.min(dim=0).values # 축별 범위
+            # scene_extent = ranges.max() # 가장 큰 축 기준
+
+            new_gaussian = densify_and_prune(
+                model, min_opacity=0.01, threshold_grad=0.0002, scene_extent=scene_extent
+            )
+
+            model.xyz = nn.Parameter(new_gaussian["xyz"])
+            model.sh_coeffs = nn.Parameter(new_gaussian["sh_coeffs"])
+            model.opacity_logit = nn.Parameter(new_gaussian["opacity_logit"])
+            model.scale_log = nn.Parameter(new_gaussian["scale_log"])
+            model.rot_quat = nn.Parameter(new_gaussian["rot_quat"])
+
+            # 파라미터 텐서 자체가 교체되었으므로 Optimizer를 새로 만들어야 함
+            param_list = [
+                {'params': [model.xyz], 'lr': config["lr"]["xyz"], 'initial_lr': config["lr"]["xyz"], 'name': 'xyz'},
+                {'params': [model.sh_coeffs], 'lr': config["lr"]["sh_coeffs"], 'initial_lr': config["lr"]["sh_coeffs"], 'name': 'sh'},
+                {'params': [model.opacity_logit], 'lr': config["lr"]["opacity_logit"], 'initial_lr': config["lr"]["opacity_logit"], 'name': 'opacity'},
+                {'params': [model.scale_log], 'lr': config["lr"]["scale_log"], 'initial_lr': config["lr"]["scale_log"], 'name': 'scale'},
+                {'params': [model.rot_quat], 'lr': config["lr"]["rot_quat"], 'initial_lr': config["lr"]["rot_quat"], 'name': 'rotation'},
+            ]
+            optimizer = torch.optim.Adam(param_list, lr=config["lr"]["default"])
+            scheduler = torch.optim.lr_scheduler.StepLR(
+                optimizer,
+                step_size=1000,
+                gamma=0.5,
+                last_epoch=step 
+            )
+            if 2*step == config["n_iters"]:
+                print(f"✨ [Step {step}] Opacity Reset! 모든 점의 투명도를 1%로 초기화합니다.")
+                target_opacity = 0.01 
+                reset_logit = inverse_sigmoid(torch.tensor(target_opacity)).to(device)
+                model.opacity_logit.data.fill_(reset_logit)
+        if torch.isnan(model.xyz).any():
+            print(f"\n🚨 [Step {step}] 업데이트 후 model.xyz에 nan 발생!")
+            break
     model.eval()
     frames = []
     with torch.no_grad():
         poses = get_360_poses(device=device)
         for c2w in tqdm(poses, desc="[Render]"):
+            c2w[0:3, 1:3] *= -1
             w2c = torch.linalg.inv(c2w)
             cam_pos = -w2c[:3, :3].T @ w2c[:3, 3]
             view_dirs = model.xyz - cam_pos.to(device) # unsqueeze(0)
