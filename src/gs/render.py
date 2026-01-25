@@ -1,44 +1,6 @@
 import torch
 from src.utils import get_conic
 
-def gaussians_to_screen(g3d, w2c, focal, H, W):
-    xyz     = g3d["xyz"]
-    cov3d   = g3d["cov3d"]
-    rgb     = g3d["rgb"]
-    opacity = g3d["opacity"]
-
-    # 1. world -> camera (t = W * p) 
-    # 초점거리, z 같은거 다 카메라 기준인데 가우시안은 월드 좌표계에 있으니..
-    w2c = w2c.to(xyz.device) # (4, 4)
-    xyz_homo = torch.cat([xyz, torch.ones_like(xyz[...,:1])], dim=-1) # (N, 4)
-    xyz_cam = (w2c @ xyz_homo.T).T
-    x, y, z = xyz_cam[..., 0], xyz_cam[..., 1], xyz_cam[..., 2] # (N, 1)
-
-    # 2. cov3d → cov2d (Σ' = JWΣWᵀJᵀ)
-    J = torch.stack([
-        torch.stack([focal/z, torch.zeros_like(x), -(focal*x)/(z*z)], dim=1),
-        torch.stack([torch.zeros_like(y), focal/z, -(focal*y)/(z*z)], dim=1)
-    ], dim=1)
-    cov2d = (J@w2c[:3, :3])@cov3d@(J@w2c[:3, :3]).transpose(1, 2) # Σ'
-    cov2d[:, 0, 0] += 0.3 # α 구할때 역행렬 구하다가 발산 안되게 0.3 더해줌 이유는 EWA
-    cov2d[:, 1, 1] += 0.3
-
-    # 3. 점들도 2d로 투영
-    u = (x / z) * focal + W / 2
-    v = (y / z) * focal + H / 2
-    uv = torch.stack([u, v], dim=1) # (N, 2)
-
-    # 4. sorting
-    indices = torch.argsort(z, descending=False) # 깊은게 뒤쪽
-    g2d = {
-        "uv": uv[indices],
-        "cov2d": cov2d[indices],
-        "rgb": rgb[indices],
-        "opacity": opacity[indices] 
-    }
-
-    return indices, g2d
-
 def render(indices, g2d, H, W):
     uv      = g2d["uv"]
     cov2d   = g2d["cov2d"]
@@ -47,7 +9,7 @@ def render(indices, g2d, H, W):
 
     """ 렌더링 과정 C = ΣTᵢαᵢcᵢ """
     device = uv.device
-    
+
     # 픽셀 그리드 생성
     grid_y, grid_x = torch.meshgrid(
         torch.arange(H, device=device),
