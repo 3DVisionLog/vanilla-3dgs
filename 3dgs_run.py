@@ -76,8 +76,16 @@ def main(config_path, data_dir=None):
 
         img_i = np.random.randint(0, len(datas))
         target = datas[img_i]["image"].to(device) # (H, W, 3)
-        c2w = datas[img_i]["c2w"].to(device)      # (4, 4)
-        # c2w[0:3, 1:3] *= -1
+        # c2w = datas[img_i]["c2w"].to(device)      # (4, 4)
+        """
+        datas[img_i]["c2w"]는 리스트에 저장된 텐서의 메모리 주소를 가리킴
+        c2w[0:3, 1:3] *= -1하면 해당 인덱스(예: 7번 이미지)의 원본 데이터 자체가 -1이 곱해진 상태로 저장됨
+        처음 7번 이미지가 뽑혔을 때는 -1이 곱해져서 정상적으로 +Z (OpenCV 좌표계)가 되는데....
+        학습이 진행되다가 나중에 똑같은 7번 이미지가 다시 뽑히면 이미 -1이 곱해져 있던 값에 다시 -1을 곱하게 됨..!!!
+        그래서 특정 시점(이미 뽑혔던 인덱스가 다시 뽑힐 때)마다 Z-min이 마이너스로 찍히고 경고 문구가 뜨는 것입니다.
+        """
+        c2w = datas[img_i]["c2w"].clone().to(device)
+        c2w[0:3, 1:3] *= -1
         w2c = torch.linalg.inv(c2w) # World -> Camera (역행렬)
 
         # World 좌표계 기준 방향 벡터 계산(점 위치 - 카메라 위치)
