@@ -1,26 +1,23 @@
 import torch
 import numpy as np
         
-def get_c2w_opengl(eye, center, up):
+def _get_c2w_opengl(eye, center, up) -> torch.Tensor:
     """
-    y   z      물체(center)에서 카메라(eye)를
-    |  /       바라보는 pose matrix 생성!!
-    | /        즉, 카메라가 월드 중 어디에 있나
-    o ㅡㅡㅡ x (w2c는 view matrix 얜 world를 카메라로 담기)
+    eye: 카메라의 위치, center: 카메라가 바라보는 지점, up: 카메라 기준 up  
+    -> c2w: 카메라가 보는걸 world 좌표계로
     """
-    # 카메라 시선(center<-eye)의 반대
-    # 즉.. 카메라가 찍고 있는 방향을 -z로 하겠다
-    z_axis = -(center - eye)
+    z_axis = -(center - eye) # 카메라 시선(center<-eye)의 반대 = 찍고 있는 방향이 -z
+    x_axis = torch.cross(up, z_axis, dim=0) # 외적 순서 중요!!
+    y_axis = torch.cross(z_axis, x_axis, dim=0)
+
+    # 단위벡터로..
     z_axis = z_axis / torch.norm(z_axis)
-
-    x_axis = torch.cross(z_axis, up, dim=0)
     x_axis = x_axis / torch.norm(x_axis)
-
-    y_axis = torch.cross(x_axis, z_axis, dim=0)
+    y_axis = y_axis / torch.norm(y_axis)
 
     R = torch.stack([x_axis, y_axis, z_axis], dim=1)
     t = eye # c2w에서의 평행이동 == 걍 카메라 위치
-    # => c2w는 연산이 쉬임 걍 [R|t] 잖아
+    # => c2w는 연산이 쉬움 걍 [R|t] 잖아
 
     c2w = torch.eye(4, device=eye.device)
     c2w[:3, :3] = R
