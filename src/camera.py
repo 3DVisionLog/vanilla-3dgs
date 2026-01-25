@@ -47,3 +47,20 @@ def get_360_poses(n_frames=30, elevation=30, radius=4.0, device="cpu"):
         poses.append(c2w)
 
     return poses
+
+def get_cameras_extent(datas):
+    cam_centers = []
+
+    for data in datas:
+        cam_centers.append(data["c2w"][:3, 3]) 
+
+    cam_centers = torch.stack(cam_centers) # (N_cams, 3)
+
+    # 카메라들이 분포한 구(Sphere)의 반지름을 구하기
+    center = cam_centers.mean(dim=0)
+    dist = (cam_centers - center).norm(dim=1)
+    scene_radius = dist.max().item()
+
+    cameras_extent = scene_radius * 1.1 
+
+    return cameras_extent

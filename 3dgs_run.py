@@ -1,7 +1,7 @@
 import yaml
 import os
 import torch
-import torch.nn.functional as F
+import torch.nn as nn
 import argparse
 import numpy as np
 from tqdm import tqdm
@@ -11,8 +11,9 @@ from src.utils import set_seed
 from src.data_loader import load_data
 from src.gs.gs_model import GaussianModel
 from src.gs.render import gaussians_to_screen, render
+from src.gs.densify import densify_and_prune
 from src.gs.ssim import ssim
-from src.camera import get_360_poses
+from src.camera import get_360_poses, get_cameras_extent
 
 def main(config_path, data_dir=None):
     with open(config_path) as f:
@@ -32,9 +33,12 @@ def main(config_path, data_dir=None):
     datas = load_data(base_dir)
     H, W, focal = datas[0]["hwf"]
     H, W = int(H), int(W)
+    print(f"데이터 로딩 완료 H: {H}, W: {W}, focal: {focal}")
 
-    model = GaussianModel(num_points=500).to(device) # 4000이 최대인듯
+    cameras_extent = get_cameras_extent(datas)
+    print(f"Camera Extent 고정 : {cameras_extent:.4f}")
 
+    model = GaussianModel(num_points=config["n_points"]).to(device)
     # Optimizer (파라미터별 Learning Rate 차등 적용)
     optimizer = torch.optim.Adam([
         {'params': [model.xyz], 'lr': config["lr"]["xyz"]},
@@ -49,23 +53,6 @@ def main(config_path, data_dir=None):
         step_size=1000,
         gamma=0.5
     )
-
-    cam_centers = []
-    for data in datas:
-        # c2w의 4번째 열이 카메라 위치
-        cam_centers.append(data["c2w"][:3, 3]) 
-
-    cam_centers = torch.stack(cam_centers) # (N_cams, 3)
-
-    # 2. 카메라들이 분포한 구(Sphere)의 반지름을 구합니다.
-    center = cam_centers.mean(dim=0)
-    dist = (cam_centers - center).norm(dim=1)
-    scene_radius = dist.max().item()
-
-    # 3. 이걸 scene_extent로 고정합니다. (보통 1.0 ~ 4.0 정도 나옴)
-    scene_extent = scene_radius * 1.1 
-    print(f"🎯 고정된 Scene Extent: {scene_extent:.4f}")
-
 
     model.train()
     train_loss = []
@@ -95,20 +82,9 @@ def main(config_path, data_dir=None):
         view_dirs = view_dirs / view_dirs.norm(dim=1, keepdim=True)  # 정규화
 
         # @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-        """
-        World space (xyz, Σ)
-        ↓ w2c
-        Camera space (x, y, z, Σ')
-        ↓ proj
-        Image plane (x/z, y/z)
-        ↓ focal, cx, cy
-        Pixel coords (u, v)
-        ↓ rasterization + alpha blending
-        Image
-        """
         # xyz, cov3d, rgb, opacity = g3d
         # means2d, cov2d, rgb, opacity = gaussians2d
-        g3d = model(view_dirs) 
+        g3d = model(view_dirs)
         indices, g2d = gaussians_to_screen(g3d, w2c, focal, H, W)
         img = render(indices, g2d, H, W)
         # @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
