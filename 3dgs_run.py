@@ -129,45 +129,42 @@ def main(config_path, data_dir=None):
     
         train_loss.append(total_loss.item())
 
-        if step % 200 == 0 and 0.1*config["n_iters"] < step < 0.5*config["n_iters"]:
-            # debug1(model, w2c, g2d, W, H)
-            print(f"Step {step}: 점 개수 = {model.xyz.shape[0]}")
-            # ranges = model.xyz.max(dim=0).values - model.xyz.min(dim=0).values # 축별 범위
-            # scene_extent = ranges.max() # 가장 큰 축 기준
+        if 0.1*config["n_iters"] < step < 0.5*config["n_iters"]:
+            if step % 200 == 0:
+                print(f"Step {step}: 점 개수 = {model.xyz.shape[0]}")
+                # ranges = model.xyz.max(dim=0).values - model.xyz.min(dim=0).values # 축별 범위
+                # scene_extent = ranges.max() # 가장 큰 축 기준
 
-            new_gaussian = densify_and_prune(
-                model, min_opacity=0.01, threshold_grad=0.0002, scene_extent=scene_extent
-            )
+                new_gaussian = densify_and_prune(
+                    model, min_opacity=0.01, threshold_grad=0.0002, scene_extent=cameras_extent
+                )
 
-            model.xyz = nn.Parameter(new_gaussian["xyz"])
-            model.sh_coeffs = nn.Parameter(new_gaussian["sh_coeffs"])
-            model.opacity_logit = nn.Parameter(new_gaussian["opacity_logit"])
-            model.scale_log = nn.Parameter(new_gaussian["scale_log"])
-            model.rot_quat = nn.Parameter(new_gaussian["rot_quat"])
+                model.xyz = nn.Parameter(new_gaussian["xyz"])
+                model.sh_coeffs = nn.Parameter(new_gaussian["sh_coeffs"])
+                model.opacity_logit = nn.Parameter(new_gaussian["opacity_logit"])
+                model.scale_log = nn.Parameter(new_gaussian["scale_log"])
+                model.rot_quat = nn.Parameter(new_gaussian["rot_quat"])
 
-            # 파라미터 텐서 자체가 교체되었으므로 Optimizer를 새로 만들어야 함
-            param_list = [
-                {'params': [model.xyz], 'lr': config["lr"]["xyz"], 'initial_lr': config["lr"]["xyz"], 'name': 'xyz'},
-                {'params': [model.sh_coeffs], 'lr': config["lr"]["sh_coeffs"], 'initial_lr': config["lr"]["sh_coeffs"], 'name': 'sh'},
-                {'params': [model.opacity_logit], 'lr': config["lr"]["opacity_logit"], 'initial_lr': config["lr"]["opacity_logit"], 'name': 'opacity'},
-                {'params': [model.scale_log], 'lr': config["lr"]["scale_log"], 'initial_lr': config["lr"]["scale_log"], 'name': 'scale'},
-                {'params': [model.rot_quat], 'lr': config["lr"]["rot_quat"], 'initial_lr': config["lr"]["rot_quat"], 'name': 'rotation'},
-            ]
-            optimizer = torch.optim.Adam(param_list, lr=config["lr"]["default"])
-            scheduler = torch.optim.lr_scheduler.StepLR(
-                optimizer,
-                step_size=1000,
-                gamma=0.5,
-                last_epoch=step 
-            )
-            if 2*step == config["n_iters"]:
-                print(f"✨ [Step {step}] Opacity Reset! 모든 점의 투명도를 1%로 초기화합니다.")
-                target_opacity = 0.01 
-                reset_logit = inverse_sigmoid(torch.tensor(target_opacity)).to(device)
-                model.opacity_logit.data.fill_(reset_logit)
-        if torch.isnan(model.xyz).any():
-            print(f"\n🚨 [Step {step}] 업데이트 후 model.xyz에 nan 발생!")
-            break
+                # 파라미터 텐서 자체가 교체되었으므로 Optimizer를 새로 만들어야 함
+                param_list = [
+                    {'params': [model.xyz], 'lr': config["lr"]["xyz"], 'initial_lr': config["lr"]["xyz"], 'name': 'xyz'},
+                    {'params': [model.sh_coeffs], 'lr': config["lr"]["sh_coeffs"], 'initial_lr': config["lr"]["sh_coeffs"], 'name': 'sh'},
+                    {'params': [model.opacity_logit], 'lr': config["lr"]["opacity_logit"], 'initial_lr': config["lr"]["opacity_logit"], 'name': 'opacity'},
+                    {'params': [model.scale_log], 'lr': config["lr"]["scale_log"], 'initial_lr': config["lr"]["scale_log"], 'name': 'scale'},
+                    {'params': [model.rot_quat], 'lr': config["lr"]["rot_quat"], 'initial_lr': config["lr"]["rot_quat"], 'name': 'rotation'},
+                ]
+                optimizer = torch.optim.Adam(param_list, lr=config["lr"]["default"])
+                scheduler = torch.optim.lr_scheduler.StepLR(
+                    optimizer,
+                    step_size=1000,
+                    gamma=0.5,
+                    last_epoch=step 
+                )
+                if step % 1000 == 0:
+                    new_opa = torch.tensor(0.01)
+                    reset_logit = torch.log(new_opa / (1 - new_opa)).to(device)
+                    model.opacity_logit.data.fill_(reset_logit)
+
     model.eval()
     frames = []
     with torch.no_grad():
