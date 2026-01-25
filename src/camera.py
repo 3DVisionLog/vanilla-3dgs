@@ -26,8 +26,9 @@ def _get_c2w_opengl(eye, center, up) -> torch.Tensor:
     return c2w
 
 def get_360_poses(n_frames=30, elevation=30, radius=4.0, device="cpu"):
+    # 블렌더 데이터셋을 사용하니 render할때도 y-up으로
     poses = []
-    up = torch.tensor([0.0, 0.0, 1.0], device=device)
+    up = torch.tensor([0.0, 1.0, 0.0], device=device)
     center = torch.tensor([0.0, 0.0, 0.0], device=device)
 
     phi = np.deg2rad(elevation) # 고도
@@ -37,11 +38,11 @@ def get_360_poses(n_frames=30, elevation=30, radius=4.0, device="cpu"):
         
         eye_pos = torch.tensor([
             radius * np.cos(phi) * np.cos(theta), 
-            radius * np.cos(phi) * np.sin(theta),
-            radius * np.sin(phi)
+            radius * np.sin(phi),
+            radius * np.cos(phi) * np.sin(theta)
         ], device=device).float()
 
-        c2w = get_c2w_opengl(eye_pos, center, up)
+        c2w = _get_c2w_opengl(eye_pos, center, up)
 
         poses.append(c2w)
 
