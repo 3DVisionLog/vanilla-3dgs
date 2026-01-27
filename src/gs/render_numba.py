@@ -157,12 +157,10 @@ class GaussianRasterizerFunction(torch.autograd.Function):
         blockspergrid = (blockspergrid_x, blockspergrid_y)
 
         render_numba_kernel[blockspergrid, threadsperblock](
-            d_means2d, d_conics, d_opacities, d_rgbs, d_output, H, W
+            d_means2d, d_conics, d_opacities, d_rgbs, d_output
         )
 
         ctx.save_for_backward(means2d, conics, opacity, rgb, final_image)
-        ctx.H = H
-        ctx.W = W
 
         return final_image
 
@@ -200,7 +198,6 @@ class GaussianRasterizerFunction(torch.autograd.Function):
             d_means, d_conics, d_opac, d_rgb, d_final,
             d_grad_img, # 입력
             d_grad_means, d_grad_conics, d_grad_opac, d_grad_rgb, # 출력
-            H, W
         )
 
         # forward 인자랑 순서랑 개수 똑같아야 함(H, W는 미분 없으니 None 리턴)

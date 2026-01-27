@@ -10,10 +10,13 @@ from PIL import Image
 from src.utils import set_seed
 from src.data_loader import load_data
 from src.gs.gs_model import GaussianModel
-from src.gs.render import gaussians_to_screen, render
 from src.gs.densify import densify_and_prune
+from src.gs.projection import gaussians_to_screen
+from src.gs.render import render
+from src.gs.render_numba import GaussianRasterizerFunction
 from src.gs.ssim import ssim
 from src.camera import get_360_poses, get_cameras_extent
+from src.utils import get_conic
 
 def main(config_path, data_dir=None):
     with open(config_path) as f:
@@ -86,7 +89,16 @@ def main(config_path, data_dir=None):
         # means2d, cov2d, rgb, opacity = gaussians2d
         g3d = model(view_dirs)
         indices, g2d = gaussians_to_screen(g3d, w2c, focal, H, W)
-        img = render(indices, g2d, H, W)
+        if config["renderer"] == "cuda":
+            uv      = g2d["uv"]
+            cov2d   = g2d["cov2d"]
+            conics  = get_conic(cov2d)
+            rgb     = g2d["rgb"]
+            opacity = g2d["opacity"]  
+
+            img = GaussianRasterizerFunction.apply(uv, conics, opacity, rgb, H, W)
+        else: 
+            img = render(indices, g2d, H, W)
         # @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
         
         # (3) Loss 계산 (L1 + SSIM)
@@ -136,6 +148,7 @@ def main(config_path, data_dir=None):
                     gamma=0.5,
                     last_epoch=step 
                 )
+
                 if step % 1000 == 0:
                     new_opa = torch.tensor(0.01)
                     reset_logit = torch.log(new_opa / (1 - new_opa)).to(device)
@@ -153,9 +166,17 @@ def main(config_path, data_dir=None):
             view_dirs = view_dirs / (view_dirs.norm(dim=1, keepdim=True))
 
             # @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-            g3d = model(view_dirs) 
+            g3d = model(view_dirs)
             indices, g2d = gaussians_to_screen(g3d, w2c, focal, H, W)
-            img = render(indices, g2d, H, W)
+            if config["renderer"] == "cuda":
+                uv      = g2d["uv"]
+                cov2d   = g2d["cov2d"]
+                conics  = get_conic(cov2d)
+                rgb     = g2d["rgb"]
+                opacity = g2d["opacity"]  
+                img = GaussianRasterizerFunction.apply(uv, conics, opacity, rgb, H, W)
+            else: 
+                img = render(indices, g2d, H, W)
             # @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 
             rgb = torch.cat(img, dim=0) # 다시 이미지 모양으로 합치기
