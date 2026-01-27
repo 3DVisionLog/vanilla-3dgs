@@ -23,7 +23,7 @@ def render(indices, g2d, H, W):
     final_image = torch.zeros(H, W, 3, device=device)
 
     for i in range(len(indices)):
-        # dᵀΣ⁻¹d = (p-μ)ᵀΣ⁻¹(p-μ) = ax²+cy²+2bxy
+        # mahal_dist: dᵀΣ⁻¹d = (p-μ)ᵀΣ⁻¹(p-μ) = ax²+cy²+2bxy
         delta = pixels - uv[i]  # (H, W, 2)
         mahal_dist = (
             delta[..., 0]**2 * conics[i][0] + # x=delta[..., 0]
