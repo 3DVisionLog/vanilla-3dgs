@@ -1,4 +1,6 @@
 import math
+import numpy as np
+import torch
 from numba import cuda
 
 @cuda.jit
@@ -108,8 +110,8 @@ def render_backward_kernel(
         dDist_du = 2*inv_xx*dx + 2*inv_xy*dy
         dDist_dv = 2*inv_yy*dy + 2*inv_xy*dx
 
-        cuda.atomic.add(grad_means2d, (i, 0), dLoss_dDist*dDist_du)
-        cuda.atomic.add(grad_means2d, (i, 1), dLoss_dDist*dDist_dv)
+        cuda.atomic.add(grad_means2d, (i, 0), -dLoss_dDist*dDist_du)
+        cuda.atomic.add(grad_means2d, (i, 1), -dLoss_dDist*dDist_dv)
 
         # 2. dLoss_dConics = dLoss_dDist * dDist_dConic
         dDist_dxx = dx*dx # inv_xx(a)
@@ -137,3 +139,69 @@ def render_backward_kernel(
         acc_b += weight * rgbs[i, 2]
 
         T = T * (1.0 - alpha)
+
+class GaussianRasterizerFunction(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, means2d, conics, opacity, rgb, H, W):
+        d_means2d = cuda.as_cuda_array(means2d.detach().contiguous())
+        d_conics = cuda.as_cuda_array(conics.detach().contiguous())
+        d_opacities = cuda.as_cuda_array(opacity.view(-1).detach().contiguous())
+        d_rgbs = cuda.as_cuda_array(rgb.detach().contiguous())
+
+        final_image = torch.zeros((H, W, 3), device=means2d.device)
+        d_output = cuda.as_cuda_array(final_image)
+
+        threadsperblock = (16, 16)
+        blockspergrid_x = int(np.ceil(W / threadsperblock[0]))
+        blockspergrid_y = int(np.ceil(H / threadsperblock[1]))
+        blockspergrid = (blockspergrid_x, blockspergrid_y)
+
+        render_numba_kernel[blockspergrid, threadsperblock](
+            d_means2d, d_conics, d_opacities, d_rgbs, d_output, H, W
+        )
+
+        ctx.save_for_backward(means2d, conics, opacity, rgb, final_image)
+        ctx.H = H
+        ctx.W = W
+
+        return final_image
+
+    @staticmethod
+    def backward(ctx, grad_img):
+        # grad_img: Loss에서 넘어온 dLoss_dImage (H, W, 3)
+
+        means2d, conics, opacity, rgb, final_image = ctx.saved_tensors
+        H, W = ctx.H, ctx.W
+
+        # Gradient 담을 빈 텐서
+        grad_means2d = torch.zeros_like(means2d)
+        grad_conics = torch.zeros_like(conics)
+        grad_opacity = torch.zeros_like(opacity)
+        grad_rgb = torch.zeros_like(rgb)
+
+        d_grad_img = cuda.as_cuda_array(grad_img.contiguous())
+        d_grad_means = cuda.as_cuda_array(grad_means2d)
+        d_grad_conics = cuda.as_cuda_array(grad_conics)
+        d_grad_opac = cuda.as_cuda_array(grad_opacity.view(-1).contiguous())
+        d_grad_rgb = cuda.as_cuda_array(grad_rgb)
+
+        # forward 했던 거 .detach() 또 해줘야함
+        d_means = cuda.as_cuda_array(means2d.detach())
+        d_conics = cuda.as_cuda_array(conics.detach())
+        d_opac = cuda.as_cuda_array(opacity.view(-1).detach().contiguous())
+        d_rgb = cuda.as_cuda_array(rgb.detach())
+        d_final = cuda.as_cuda_array(final_image.detach())
+
+        block = (16, 16)
+        grid_x = int(np.ceil(W / 16))
+        grid_y = int(np.ceil(H / 16))
+
+        render_backward_kernel[(grid_x, grid_y), block](
+            d_means, d_conics, d_opac, d_rgb, d_final,
+            d_grad_img, # 입력
+            d_grad_means, d_grad_conics, d_grad_opac, d_grad_rgb, # 출력
+            H, W
+        )
+
+        # forward 인자랑 순서랑 개수 똑같아야 함(H, W는 미분 없으니 None 리턴)
+        return grad_means2d, grad_conics, grad_opacity, grad_rgb, None, None
