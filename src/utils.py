@@ -25,3 +25,18 @@ def get_conic(cov2d): # 역행렬 계산
     inv_xy = -b / det
 
     return torch.stack([inv_xx, inv_yy, inv_xy], dim=1)
+
+def get_radii(cov2d): # (N, 3)
+    a = cov2d[:, 0, 0] # xx
+    b = cov2d[:, 0, 1] # xy
+    c = cov2d[:, 1, 1] # yy
+
+    # λ = ((a+c) +- sqrt((a-c)² + 4b²)) / 2
+    lambda1 = ((a+c) + torch.sqrt(
+        ((a-c)**2+4*b**2))
+    ) / 2.0
+    
+    # sqrt(고유값) -> 표준편차 -> 3배해서 99.7%가 반지름 속에 포함되도록..
+    radii = torch.ceil(3.0 * torch.sqrt(lambda1)) # .ceil(): 올림
+
+    return radii

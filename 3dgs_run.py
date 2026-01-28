@@ -13,10 +13,10 @@ from src.gs.gs_model import GaussianModel
 from src.gs.densify import densify_and_prune
 from src.gs.projection import gaussians_to_screen
 from src.gs.render import render
-from src.gs.render_numba import GaussianRasterizerFunction
+from src.render.rasterizer import GaussianRasterizerFunction
 from src.gs.ssim import ssim
 from src.camera import get_360_poses, get_cameras_extent
-from src.utils import get_conic
+from src.utils import get_conic, get_radii
 
 def main(config_path, data_dir=None):
     with open(config_path) as f:
@@ -42,6 +42,13 @@ def main(config_path, data_dir=None):
     print(f"Camera Extent 고정 : {cameras_extent:.4f}")
 
     model = GaussianModel(num_points=config["n_points"]).to(device)
+
+    ply_path = os.path.join(base_dir, "points3D.ply") 
+    if os.path.exists(ply_path):
+        print(f"📂 [초기화] {ply_path} 파일을 로드하여 가우시안을 생성합니다.")
+        # PLY 파일에 맞춰 모델 생성 (GaussianModel 클래스에 load_ply 메서드가 있다고 가정)
+        model.load_ply(ply_path)
+
     # Optimizer (파라미터별 Learning Rate 차등 적용)
     optimizer = torch.optim.Adam([
         {'params': [model.xyz], 'lr': config["lr"]["xyz"]},
@@ -60,8 +67,8 @@ def main(config_path, data_dir=None):
     model.train()
     train_loss = []
     print("학습 시작!")
-    for step in tqdm(range(config["n_iters"]), desc="Training..."): # 1000번 반복
-        # debug_coordinate_system(model, datas, H, W, focal)
+    
+    for step in tqdm(range(config["iters"]["total"]), desc="Training..."):
         optimizer.zero_grad()
 
         img_i = np.random.randint(0, len(datas))
@@ -90,13 +97,10 @@ def main(config_path, data_dir=None):
         g3d = model(view_dirs)
         indices, g2d = gaussians_to_screen(g3d, w2c, focal, H, W)
         if config["renderer"] == "cuda":
-            uv      = g2d["uv"]
-            cov2d   = g2d["cov2d"]
+            means2d, cov2d, rgb, opacity = g2d
             conics  = get_conic(cov2d)
-            rgb     = g2d["rgb"]
-            opacity = g2d["opacity"]  
-
-            img = GaussianRasterizerFunction.apply(uv, conics, opacity, rgb, H, W)
+            radii   = get_radii(cov2d)
+            img = GaussianRasterizerFunction.apply(means2d, conics, opacity, rgb, radii, H, W)
         else: 
             img = render(indices, g2d, H, W)
         # @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
@@ -117,8 +121,8 @@ def main(config_path, data_dir=None):
     
         train_loss.append(total_loss.item())
 
-        if 0.1*config["n_iters"] < step < 0.5*config["n_iters"]:
-            if step % 200 == 0:
+        if config["iters"]["start"] < step <= 0.5*config["iters"]["total"]:
+            if step % config["iters"]["densify"] == 0:
                 print(f"Step {step}: 점 개수 = {model.xyz.shape[0]}")
                 # ranges = model.xyz.max(dim=0).values - model.xyz.min(dim=0).values # 축별 범위
                 # scene_extent = ranges.max() # 가장 큰 축 기준
@@ -149,7 +153,7 @@ def main(config_path, data_dir=None):
                     last_epoch=step 
                 )
 
-                if step % 1000 == 0:
+                if step % config["iters"]["reset"] == 0:
                     new_opa = torch.tensor(0.01)
                     reset_logit = torch.log(new_opa / (1 - new_opa)).to(device)
                     model.opacity_logit.data.fill_(reset_logit)
@@ -166,22 +170,21 @@ def main(config_path, data_dir=None):
             view_dirs = view_dirs / (view_dirs.norm(dim=1, keepdim=True))
 
             # @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+            # xyz, cov3d, rgb, opacity = g3d
+            # means2d, cov2d, rgb, opacity = gaussians2d
             g3d = model(view_dirs)
             indices, g2d = gaussians_to_screen(g3d, w2c, focal, H, W)
             if config["renderer"] == "cuda":
-                uv      = g2d["uv"]
-                cov2d   = g2d["cov2d"]
+                means2d, cov2d, rgb, opacity = g2d
                 conics  = get_conic(cov2d)
-                rgb     = g2d["rgb"]
-                opacity = g2d["opacity"]  
-                img = GaussianRasterizerFunction.apply(uv, conics, opacity, rgb, H, W)
+                radii   = get_radii(cov2d)
+                img = GaussianRasterizerFunction.apply(means2d, conics, opacity, rgb, radii, H, W)
             else: 
                 img = render(indices, g2d, H, W)
+                # img = torch.cat(img, dim=0) # 다시 이미지 모양으로 합치기
+                # img = img.reshape(H, W, 3)  # flatten해준거 다시 펴주고~
             # @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-
-            rgb = torch.cat(img, dim=0) # 다시 이미지 모양으로 합치기
-            rgb = rgb.reshape(H, W, 3)       # flatten해준거 다시 펴주고~
-            rgb = (rgb.clamp(0, 1) * 255).byte().cpu().numpy()
+            rgb = (img.clamp(0, 1) * 255).byte().cpu().numpy()
     
             frames.append(Image.fromarray(rgb))
 
