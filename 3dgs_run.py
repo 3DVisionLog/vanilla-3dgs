@@ -12,7 +12,7 @@ from src.data_loader import load_data
 from src.gs.gs_model import GaussianModel
 from src.gs.densify import densify_and_prune
 from src.gs.projection import gaussians_to_screen
-from src.gs.render import render
+from src.render.render import render
 from src.render.rasterizer import GaussianRasterizerFunction
 from src.gs.ssim import ssim
 from src.camera import get_360_poses, get_cameras_extent
@@ -82,7 +82,7 @@ def main(config_path, data_dir=None):
         그래서 특정 시점(이미 뽑혔던 인덱스가 다시 뽑힐 때)마다 Z-min이 마이너스로 찍히고 경고 문구가 뜨는 것입니다.
         """
         c2w = datas[img_i]["c2w"].clone().to(device)
-        c2w[0:3, 1:3] *= -1
+        # c2w[0:3, 1:3] *= -1
         w2c = torch.linalg.inv(c2w) # World -> Camera (역행렬)
 
         # World 좌표계 기준 방향 벡터 계산(점 위치 - 카메라 위치)
@@ -92,15 +92,20 @@ def main(config_path, data_dir=None):
         view_dirs = view_dirs / view_dirs.norm(dim=1, keepdim=True)  # 정규화
 
         # @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-        # xyz, cov3d, rgb, opacity = g3d
-        # means2d, cov2d, rgb, opacity = gaussians2d
+        # g3d: xyz, cov3d, rgb, opacity
+        # gaussians2d: means2d, cov2d, rgb, opacity
         g3d = model(view_dirs)
         indices, g2d = gaussians_to_screen(g3d, w2c, focal, H, W)
+
         if config["renderer"] == "cuda":
-            means2d, cov2d, rgb, opacity = g2d
+            uv      = g2d["uv"]
+            cov2d   = g2d["cov2d"]
             conics  = get_conic(cov2d)
-            radii   = get_radii(cov2d)
-            img = GaussianRasterizerFunction.apply(means2d, conics, opacity, rgb, radii, H, W)
+            rgb     = g2d["rgb"]
+            opacity = g2d["opacity"]  
+            radii = get_radii(cov2d)
+            
+            img = GaussianRasterizerFunction.apply(uv, conics, opacity, rgb, radii, H, W)
         else: 
             img = render(indices, g2d, H, W)
         # @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
@@ -121,7 +126,7 @@ def main(config_path, data_dir=None):
     
         train_loss.append(total_loss.item())
 
-        if config["iters"]["start"] < step <= 0.5*config["iters"]["total"]:
+        if config["iters"]["start"] < step <= 0.8*config["iters"]["total"]:
             if step % config["iters"]["densify"] == 0:
                 print(f"Step {step}: 점 개수 = {model.xyz.shape[0]}")
                 # ranges = model.xyz.max(dim=0).values - model.xyz.min(dim=0).values # 축별 범위
@@ -170,15 +175,18 @@ def main(config_path, data_dir=None):
             view_dirs = view_dirs / (view_dirs.norm(dim=1, keepdim=True))
 
             # @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-            # xyz, cov3d, rgb, opacity = g3d
-            # means2d, cov2d, rgb, opacity = gaussians2d
             g3d = model(view_dirs)
             indices, g2d = gaussians_to_screen(g3d, w2c, focal, H, W)
+
             if config["renderer"] == "cuda":
-                means2d, cov2d, rgb, opacity = g2d
+                uv      = g2d["uv"]
+                cov2d   = g2d["cov2d"]
                 conics  = get_conic(cov2d)
-                radii   = get_radii(cov2d)
-                img = GaussianRasterizerFunction.apply(means2d, conics, opacity, rgb, radii, H, W)
+                rgb     = g2d["rgb"]
+                opacity = g2d["opacity"]  
+                radii = get_radii(cov2d)
+                
+                img = GaussianRasterizerFunction.apply(uv, conics, opacity, rgb, radii, H, W)
             else: 
                 img = render(indices, g2d, H, W)
                 # img = torch.cat(img, dim=0) # 다시 이미지 모양으로 합치기
