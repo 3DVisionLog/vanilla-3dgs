@@ -61,8 +61,7 @@ def render_backward_kernel(
     num_points = means2d.shape[0]
 
     # @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-    # 2. 이 픽셀의 오차(Gradient) 가져오기
-    # dL_dPixel: (3,) RGB 벡터
+    # 해당 픽셀의 Gradient
     dLoss_dr = grad_image[y, x, 0]
     dLoss_dg = grad_image[y, x, 1]
     dLoss_db = grad_image[y, x, 2]
