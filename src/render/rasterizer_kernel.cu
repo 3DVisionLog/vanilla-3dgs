@@ -47,7 +47,7 @@ __global__ void forward_kernel(
         
         // alpha = opacity * exp(distance)
         float alpha = opacities[i] * expf(-0.5f * mahal_dist);
-        if (alpha < 1.0f / 255.0f): continue
+        if (alpha < 1.0f / 255.0f) continue;
 
         // final_image += weight * color
         float weight = T * alpha;
@@ -103,7 +103,7 @@ __global__ void backward_kernel(
         );
         
         float alpha = opacities[i] * expf(-0.5f * mahal_dist);
-        if (alpha < 1.0f / 255.0f): continue
+        if (alpha < 1.0f / 255.0f) continue;
         
         // ---------------- backprop -----------------
         // dLoss/dAlpha 좀 복잡 (next = final - acc - curr)
@@ -161,4 +161,73 @@ __global__ void backward_kernel(
         T = T * (1.0f - alpha);
         if (T < 0.0001f) break;
     }
+}
+
+// C++ Wrapper Functions
+torch::Tensor render_forward(
+    torch::Tensor means2d,
+    torch::Tensor conics,
+    torch::Tensor opacities,
+    torch::Tensor rgbs,
+    int H, int W
+) {
+    int num_points = means2d.size(0);
+    
+    auto output_image = torch::zeros({H, W, 3}, means2d.options());
+
+    const dim3 threads(16, 16);
+    const dim3 blocks((W + threads.x - 1) / threads.x, (H + threads.y - 1) / threads.y);
+
+    forward_kernel<<<blocks, threads>>>(
+        means2d.data_ptr<float>(),
+        conics.data_ptr<float>(),
+        opacities.data_ptr<float>(),
+        rgbs.data_ptr<float>(),
+        output_image.data_ptr<float>(),
+        num_points, H, W
+    );
+    
+    return output_image;
+}
+
+std::vector<torch::Tensor> render_backward(
+    torch::Tensor means2d,
+    torch::Tensor conics,
+    torch::Tensor opacities,
+    torch::Tensor rgbs,
+    torch::Tensor final_image,
+    torch::Tensor grad_image
+) {
+    int num_points = means2d.size(0);
+    int H = grad_image.size(0);
+    int W = grad_image.size(1);
+
+    auto grad_means2d = torch::zeros_like(means2d);
+    auto grad_conics = torch::zeros_like(conics);
+    auto grad_opacities = torch::zeros_like(opacities);
+    auto grad_rgbs = torch::zeros_like(rgbs);
+
+    const dim3 threads(16, 16);
+    const dim3 blocks((W + threads.x - 1) / threads.x, (H + threads.y - 1) / threads.y);
+
+    backward_kernel<<<blocks, threads>>>(
+        means2d.data_ptr<float>(),
+        conics.data_ptr<float>(),
+        opacities.data_ptr<float>(),
+        rgbs.data_ptr<float>(),
+        final_image.data_ptr<float>(),
+        grad_image.data_ptr<float>(),
+        grad_means2d.data_ptr<float>(),
+        grad_conics.data_ptr<float>(),
+        grad_opacities.data_ptr<float>(),
+        grad_rgbs.data_ptr<float>(),
+        num_points, H, W
+    );
+
+    return {grad_means2d, grad_conics, grad_opacities, grad_rgbs};
+}
+
+PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+    m.def("render_forward", &render_forward, "Render Forward (CUDA)");
+    m.def("render_backward", &render_backward, "Render Backward (CUDA)");
 }
