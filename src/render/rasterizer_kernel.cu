@@ -9,6 +9,7 @@ __global__ void forward_kernel(
     const float* __restrict__ conics,    // (N, 3)
     const float* __restrict__ opacities, // (N,)
     const float* __restrict__ rgbs,      // (N, 3)
+    const float* __restrict__ radii,      // (N,)
     float* __restrict__ output_image,    // (H, W, 3)
     int num_points, int H, int W) 
 {
@@ -27,13 +28,11 @@ __global__ void forward_kernel(
         float dx = (float)x - means2d[i * 2 + 0];
         float dy = (float)y - means2d[i * 2 + 1];
         
-        /*
-        얘가 좀 크리티컬하구나?
-        # 거리가 너무 멀면(3시그마 밖) 계산하지 말고 패스 (continue)
-        # 대략적인 범위 체크 (생략 가능하지만 넣으면 빠름)
-        radius = radii[i]
-        if abs(dx) > radius or abs(dy) > radius: continue
-        */
+        
+        // 거리가 너무 멀면(3시그마 밖) 계산하지 말고 패스
+        // 얘가 성능 은근 많이 올림
+        float radius = radii[i];
+        if (fabsf(dx) > radius || fabsf(dy) > radius) continue;
 
         float inv_xx = conics[i * 3 + 0];
         float inv_yy = conics[i * 3 + 1];
@@ -68,6 +67,7 @@ __global__ void forward_kernel(
 __global__ void backward_kernel(
     const float* __restrict__ means2d, const float* __restrict__ conics,
     const float* __restrict__ opacities, const float* __restrict__ rgbs,
+    const float* __restrict__ radii,
     const float* __restrict__ final_image, 
     const float* __restrict__ grad_image,
     float* grad_means2d, float* grad_conics, float* grad_opacities, float* grad_rgbs,
@@ -91,6 +91,9 @@ __global__ void backward_kernel(
     for (int i = 0; i < num_points; i++) {
         float dx = (float)x - means2d[i * 2 + 0];
         float dy = (float)y - means2d[i * 2 + 1];
+        
+        float radius = radii[i];
+        if (fabsf(dx) > radius || fabsf(dy) > radius) continue;
 
         float inv_xx = conics[i * 3 + 0];
         float inv_yy = conics[i * 3 + 1];
@@ -169,6 +172,7 @@ torch::Tensor render_forward(
     torch::Tensor conics,
     torch::Tensor opacities,
     torch::Tensor rgbs,
+    torch::Tensor radii,
     int H, int W
 ) {
     int num_points = means2d.size(0);
@@ -183,6 +187,7 @@ torch::Tensor render_forward(
         conics.data_ptr<float>(),
         opacities.data_ptr<float>(),
         rgbs.data_ptr<float>(),
+        radii.data_ptr<float>(),
         output_image.data_ptr<float>(),
         num_points, H, W
     );
@@ -195,6 +200,7 @@ std::vector<torch::Tensor> render_backward(
     torch::Tensor conics,
     torch::Tensor opacities,
     torch::Tensor rgbs,
+    torch::Tensor radii,
     torch::Tensor final_image,
     torch::Tensor grad_image
 ) {
@@ -215,6 +221,7 @@ std::vector<torch::Tensor> render_backward(
         conics.data_ptr<float>(),
         opacities.data_ptr<float>(),
         rgbs.data_ptr<float>(),
+        radii.data_ptr<float>(),
         final_image.data_ptr<float>(),
         grad_image.data_ptr<float>(),
         grad_means2d.data_ptr<float>(),
