@@ -50,7 +50,7 @@ __global__ void _emitTilePairs(
 
     if (min_x > max_x || min_y > max_y) return;
 
-    // offset: ex) [1, 2, 1] -> [1, 3, 4]
+    // offsets: ex) [1(pt0), 2(pt1), 1(pt2)] -> [1, 3, 4]
     int curr_offset = (idx == 0) ? 0 : offsets[idx - 1]; // 현재 점 시작위치
     
     int count = 0;
@@ -65,4 +65,48 @@ __global__ void _emitTilePairs(
             count++;
         }
     }
+}
+
+// C++ Wrapper Functions
+std::vector<torch::Tensor> emitGaussianTilePairs(
+    torch::Tensor means2d,
+    torch::Tensor radii,
+    int H, int W
+) {
+    int num_points = means2d.size(0);
+    int grid_width = (W + BLOCK_DIM - 1) / BLOCK_DIM;
+    int grid_height = (H + BLOCK_DIM - 1) / BLOCK_DIM;
+
+    int block = 256;
+    int grid = (num_points + block - 1) / block;
+
+    // 1. 각 가우시안이 몇 개의 타일을 덮는지 계산
+    torch::Tensor tile_counts = torch::zeros({num_points}, torch::dtype(torch::kInt32).device(means2d.device()));
+
+    _countTilesPerGaussian<<<grid, block>>>(
+        means2d.data_ptr<float>(),
+        radii.data_ptr<float>(),
+        tile_counts.data_ptr<int>(),
+        num_points, grid_width, grid_height
+    );
+
+    // 2. prefix sum (cumsum): PyTorch C++ API 사용 (빠름)
+    // [1, 2, 1] -> [1, 3, 4] -> 마지막 값이 총 필요한 키 개수
+    torch::Tensor offsets = torch::cumsum(tile_counts, 0).to(torch::kInt32);
+    int total_duplicated_points = offsets[-1].item<int>(); // 마지막 값
+
+    // 3. 복제해서 tile_id, point_id pair 만들기
+    torch::Tensor duplicated_tile_ids = torch::zeros({total_duplicated_points}, torch::dtype(torch::kLong).device(means2d.device()));
+    torch::Tensor duplicated_point_ids = torch::zeros({total_duplicated_points}, torch::dtype(torch::kLong).device(means2d.device()));
+
+    _emitTilePairs<<<grid, block>>>(
+        means2d.data_ptr<float>(),
+        radii.data_ptr<float>(),
+        offsets.data_ptr<int>(),
+        duplicated_tile_ids.data_ptr<long>(),
+        duplicated_point_ids.data_ptr<long>(),
+        num_points, grid_width, grid_height
+    );
+
+    return {duplicated_tile_ids, duplicated_point_ids};
 }
