@@ -9,12 +9,12 @@ from PIL import Image
 
 from src.utils import set_seed
 from src.data_loader import load_data
-from src.gs.gs_model import GaussianModel
-from src.gs.densify import densify_and_prune
-from src.gs.projection import gaussians_to_screen
-from src.render.render import render
-from src.render.rasterizer import GaussianRasterizerFunction
-from src.gs.ssim import ssim
+from src.gaussian.model import GaussianModel
+from src.gaussian.densify import densify_and_prune
+from src.gaussian.projection import gaussians_to_screen
+# from src.render.render import render
+from src.rasterizer.rasterizer import GaussianRasterizerFunction
+from src.ssim import ssim
 from src.camera import get_360_poses, get_cameras_extent
 from src.utils import get_conic, get_radii
 
@@ -97,17 +97,14 @@ def main(config_path, data_dir=None):
         g3d = model(view_dirs)
         indices, g2d = gaussians_to_screen(g3d, w2c, focal, H, W)
 
-        if config["renderer"] == "cuda":
-            uv      = g2d["uv"]
-            cov2d   = g2d["cov2d"]
-            conics  = get_conic(cov2d)
-            rgb     = g2d["rgb"]
-            opacity = g2d["opacity"]  
-            radii = get_radii(cov2d)
-            
-            img = GaussianRasterizerFunction.apply(uv, conics, opacity, rgb, radii, H, W)
-        else: 
-            img = render(indices, g2d, H, W)
+        uv      = g2d["uv"]
+        cov2d   = g2d["cov2d"]
+        conics  = get_conic(cov2d)
+        rgb     = g2d["rgb"]
+        opacity = g2d["opacity"]  
+        radii = get_radii(cov2d)
+        
+        img = GaussianRasterizerFunction.apply(uv, conics, opacity, rgb, radii, H, W)
         # @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
         
         # (3) Loss 계산 (L1 + SSIM)
@@ -128,10 +125,6 @@ def main(config_path, data_dir=None):
 
         if config["iters"]["start"] < step <= 0.8*config["iters"]["total"]:
             if step % config["iters"]["densify"] == 0:
-                print(f"Step {step}: 점 개수 = {model.xyz.shape[0]}")
-                # ranges = model.xyz.max(dim=0).values - model.xyz.min(dim=0).values # 축별 범위
-                # scene_extent = ranges.max() # 가장 큰 축 기준
-
                 new_gaussian = densify_and_prune(
                     model, min_opacity=0.01, threshold_grad=0.0002, scene_extent=cameras_extent
                 )
@@ -141,7 +134,9 @@ def main(config_path, data_dir=None):
                 model.opacity_logit = nn.Parameter(new_gaussian["opacity_logit"])
                 model.scale_log = nn.Parameter(new_gaussian["scale_log"])
                 model.rot_quat = nn.Parameter(new_gaussian["rot_quat"])
-
+                    
+                print(f"Step {step}: 점 개수 = {model.xyz.shape[0]}")
+                
                 # 파라미터 텐서 자체가 교체되었으므로 Optimizer를 새로 만들어야 함
                 param_list = [
                     {'params': [model.xyz], 'lr': config["lr"]["xyz"], 'initial_lr': config["lr"]["xyz"], 'name': 'xyz'},
