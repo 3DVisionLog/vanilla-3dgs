@@ -28,9 +28,13 @@ def load_nerf_dataset(base_dir, split="train"):
         H, W = image.shape[:2]
         focal = 0.5 * W / math.tan(0.5 * camera_angle_x)
 
+        c2w = torch.tensor(frame["transform_matrix"]).float()
+        c2w[0:3, 1:3] *= -1 # NeRF 데이터셋을 3dgs에서 쓸려면 이거 필수아니겟삼?
+        w2c = torch.linalg.inv(c2w)
+
         datas.append({
             "image": image,
-            "c2w": torch.tensor(frame["transform_matrix"]).float(),
+            "w2c": w2c,
             "hwf": [H, W, focal],
         })
 
@@ -96,14 +100,13 @@ def load_colmap_dataset(base_dir):
             w2c = np.eye(4)
             w2c[:3, :3] = R
             w2c[:3, 3] = tvec
-            c2w = np.linalg.inv(w2c)
 
             cam = cameras[cam_id]
             image = load_image_tensor(os.path.join(base_dir, "images", img_name))
 
             datas.append({
                 "image": image,
-                "c2w": torch.from_numpy(c2w).float(),
+                "w2c": torch.from_numpy(w2c).float(),
                 "hwf": [cam["H"], cam["W"], cam["focal"]],
             })
 

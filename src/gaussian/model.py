@@ -1,9 +1,6 @@
 import torch
 import torch.nn as nn
 
-import torch
-import torch.nn as nn
-
 class GaussianModel(nn.Module):
     """
     학습 가능한 Gaussian 집합
@@ -78,3 +75,27 @@ class GaussianModel(nn.Module):
             "rgb": rgb,
             "opacity": opacity
         }
+    
+    def replace_gaussians(self, new_g):
+        self.xyz = nn.Parameter(new_g["xyz"])
+        self.sh_coeffs = nn.Parameter(new_g["sh_coeffs"])
+        self.opacity_logit = nn.Parameter(new_g["opacity_logit"])
+        self.scale_log = nn.Parameter(new_g["scale_log"])
+        self.rot_quat = nn.Parameter(new_g["rot_quat"])
+
+    def opacity_reset(self, new_opa=0.01):
+        reset_logit = torch.log(
+            torch.tensor(new_opa, device=self.opacity_logit.device)
+            / (1 - new_opa)
+        )
+        with torch.no_grad():
+            self.opacity_logit.fill_(reset_logit)
+
+    def get_params(self):
+        return [
+            self.xyz, 
+            self.scale_log, 
+            self.opacity_logit, 
+            self.rot_quat, 
+            self.sh_coeffs
+        ]

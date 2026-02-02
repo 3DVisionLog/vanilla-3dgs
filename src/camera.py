@@ -1,12 +1,12 @@
 import torch
 import numpy as np
         
-def _get_c2w_opengl(eye, center, up) -> torch.Tensor:
+def _get_c2w_opencv(eye, center, up) -> torch.Tensor:
     """
     eye: 카메라의 위치, center: 카메라가 바라보는 지점, up: 카메라 기준 up  
     -> c2w: 카메라가 보는걸 world 좌표계로
     """
-    z_axis = -(center - eye) # 카메라 시선(center<-eye)의 반대 = 찍고 있는 방향이 -z
+    z_axis = center - eye # 카메라 시선(center<-eye) = 찍고 있는 방향이 +z
     x_axis = torch.cross(up, z_axis, dim=0) # 외적 순서 중요!!
     y_axis = torch.cross(z_axis, x_axis, dim=0)
 
@@ -41,9 +41,10 @@ def get_360_poses(n_frames=30, elevation=30, radius=4.0, device="cpu"):
             radius * np.sin(phi),
         ], device=device).float()
 
-        c2w = _get_c2w_opengl(eye_pos, center, up)
+        c2w = _get_c2w_opencv(eye_pos, center, up)
+        w2c = torch.linalg.inv(c2w)
 
-        poses.append(c2w)
+        poses.append(w2c)
 
     return poses
 
@@ -51,15 +52,17 @@ def get_cameras_extent(datas):
     cam_centers = []
 
     for data in datas:
-        cam_centers.append(data["c2w"][:3, 3]) 
-
-    cam_centers = torch.stack(cam_centers) # (N_cams, 3)
+        # cam_centers.append(data["c2w"][:3, 3]) 
+        w2c = data["w2c"]
+        R = w2c[:3, :3]
+        t = w2c[:3, 3]
+        cam_centers.append(-R.T @ t)
 
     # 카메라들이 분포한 구(Sphere)의 반지름을 구하기
+    cam_centers = torch.stack(cam_centers)  # (N_cams, 3)
+
     center = cam_centers.mean(dim=0)
     dist = (cam_centers - center).norm(dim=1)
     scene_radius = dist.max().item()
 
-    cameras_extent = scene_radius * 1.1 
-
-    return cameras_extent
+    return scene_radius * 1.1

@@ -42,21 +42,27 @@ def get_radii(cov2d): # (N, 3)
 
     return radii
 
+def save_gif(frames, path):
+    frames[0].save(
+        path,
+        save_all=True,
+        append_images=frames[1:],
+        optimize=False,
+        duration=100,
+        loop=0
+    )
+
 def save_ply(model, path):
     xyz = model.xyz.detach().cpu().numpy()
     opacity = model.opacity_logit.detach().cpu().numpy()
     scale = model.scale_log.detach().cpu().numpy()
     rotation = torch.nn.functional.normalize(model.rot_quat).detach().cpu().numpy()
 
-    sh = model.sh_coeffs.detach().cpu().numpy()  # (N, 3, K)
+    sh = model.sh_coeffs.detach().cpu().numpy() # (N, 3, K)
     N, _, K = sh.shape
 
-    # DC 그대로
-    f_dc = sh[:, :, 0]            # (N, 3)
-
-    # 고차항 그대로
-    f_rest = sh[:, :, 1:].reshape(N, -1)  # (N, 3*(K-1))
-
+    f_dc = sh[:, :, 0] # (N, 3)
+    f_rest = sh[:, :, 1:].reshape(N, -1) # (N, 3*(K-1))
 
     # PLY dtype
     dtype = [
@@ -87,5 +93,3 @@ def save_ply(model, path):
     elements[:] = list(map(tuple, data))
 
     PlyData([PlyElement.describe(elements, 'vertex')]).write(path)
-
-    print(f"✅ Viewer-compatible PLY saved: {path}")
