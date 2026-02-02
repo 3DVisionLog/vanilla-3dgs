@@ -20,4 +20,3 @@ iters:
 
 renderer: cuda
 seed: 42
-

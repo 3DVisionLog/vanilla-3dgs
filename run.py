@@ -94,9 +94,9 @@ def main(config_path, data_dir=None):
                 (img * 255).byte().cpu().numpy())
             )
 
-    save_gif(frames, os.path.join(save_dir,"result.gif"))
-    save_ply(renderer.model, os.path.join(save_dir, "point_cloud.ply"))
-    log_stats(train_loss, train_points)
+    save_gif(frames, save_dir)
+    save_ply(renderer.model, save_dir)
+    log_stats(train_loss, train_points, save_dir)
     print(f"\n결과 저장 완료! {save_dir}")
 
 if __name__ == "__main__":

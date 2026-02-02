@@ -1,5 +1,6 @@
 import random
 import torch
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 from plyfile import PlyData, PlyElement
@@ -43,7 +44,8 @@ def get_radii(cov2d): # (N, 3)
 
     return radii
 
-def save_gif(frames, path):
+def save_gif(frames, save_dir):
+    path = os.path.join(save_dir,"result.gif")
     frames[0].save(
         path,
         save_all=True,
@@ -53,7 +55,9 @@ def save_gif(frames, path):
         loop=0
     )
 
-def save_ply(model, path):
+def save_ply(model, save_dir):
+    path = os.path.join(save_dir,"point_cloud.ply")
+    
     xyz = model.xyz.detach().cpu().numpy()
     opacity = model.opacity_logit.detach().cpu().numpy()
     scale = model.scale_log.detach().cpu().numpy()
@@ -95,7 +99,9 @@ def save_ply(model, path):
 
     PlyData([PlyElement.describe(elements, 'vertex')]).write(path)
 
-def log_stats(loss, points):
+def log_stats(loss, points, save_dir):
+    path = os.path.join(save_dir,"train_stats.png")
+    
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
 
     ax1.plot(loss)
@@ -110,5 +116,5 @@ def log_stats(loss, points):
 
     plt.tight_layout()
 
-    plt.savefig('train_stats.png', dpi=300, bbox_inches='tight')
+    plt.savefig(path, dpi=300, bbox_inches='tight')
     plt.close()
