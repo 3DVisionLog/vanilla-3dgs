@@ -108,3 +108,27 @@ def load_colmap_dataset(base_dir):
             })
 
     return datas
+
+def load_points3D_bin(base_dir):
+    xyzs, rgbs = [], []
+    path = os.path.join(base_dir, "sparse/points3D.bin")
+
+    with open(path, "rb") as fid:
+        num_points = read_next_bytes(fid, 8, "Q")[0]
+
+        for _ in range(num_points):
+            read_next_bytes(fid, 8, "Q")          # point3D_id
+            X, Y, Z = read_next_bytes(fid, 24, "ddd")
+            R, G, B = read_next_bytes(fid, 3, "BBB")
+            read_next_bytes(fid, 8, "d")          # error
+
+            track_len = read_next_bytes(fid, 8, "Q")[0]
+            fid.read(track_len * 8)                # track data skip
+
+            xyzs.append([X, Y, Z])
+            rgbs.append([R, G, B])
+
+    xyz = np.asarray(xyzs, dtype=np.float32)
+    rgb = np.asarray(rgbs, dtype=np.float32)  # 0~255
+
+    return xyz, rgb
