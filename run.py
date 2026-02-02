@@ -11,7 +11,6 @@ from src.utils import set_seed, save_ply, save_gif
 from src.data.loader import load_data
 from src.data.io import load_points3D_bin
 from src.renderer import GaussianRenderer
-from src.renderer import render
 from src.ssim import ssim
 from src.camera import get_360_poses, get_cameras_extent
 
