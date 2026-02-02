@@ -1,6 +1,7 @@
 import random
 import torch
 import numpy as np
+import matplotlib.pyplot as plt
 from plyfile import PlyData, PlyElement
 
 def set_seed(seed: int = 42):
@@ -93,3 +94,21 @@ def save_ply(model, path):
     elements[:] = list(map(tuple, data))
 
     PlyData([PlyElement.describe(elements, 'vertex')]).write(path)
+
+def log_stats(loss, points):
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
+
+    ax1.plot(loss)
+    ax1.set_title('train loss')
+    ax1.set_xlabel('iteration')
+    ax1.set_ylabel('loss')
+
+    ax2.plot(points)
+    ax2.set_title('num points')
+    ax2.set_xlabel('iteration')
+    ax2.set_ylabel('points')
+
+    plt.tight_layout()
+
+    plt.savefig('train_stats.png', dpi=300, bbox_inches='tight')
+    plt.close()

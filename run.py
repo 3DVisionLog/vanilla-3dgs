@@ -7,7 +7,7 @@ from tqdm import tqdm
 from PIL import Image
 import glob
 
-from src.utils import set_seed, save_ply, save_gif
+from src.utils import set_seed, save_ply, save_gif, log_stats
 from src.data.loader import load_data
 from src.data.io import load_points3D_bin
 from src.renderer import GaussianRenderer
@@ -96,6 +96,7 @@ def main(config_path, data_dir=None):
 
     save_gif(frames, os.path.join(save_dir,"result.gif"))
     save_ply(renderer.model, os.path.join(save_dir, "point_cloud.ply"))
+    log_stats(train_loss, train_points)
     print(f"\n결과 저장 완료! {save_dir}")
 
 if __name__ == "__main__":
