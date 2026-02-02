@@ -8,7 +8,8 @@ from tqdm import tqdm
 from PIL import Image
 
 from src.utils import set_seed
-from src.data_loader import load_data
+from src.data.loader import load_data
+from src.data.io import load_points3D_bin
 from src.gaussian.model import GaussianModel
 from src.gaussian.densify import densify_and_prune
 from src.gaussian.projection import gaussians_to_screen
@@ -41,13 +42,15 @@ def main(config_path, data_dir=None):
     cameras_extent = get_cameras_extent(datas)
     print(f"Camera Extent 고정 : {cameras_extent:.4f}")
 
-    model = GaussianModel(num_points=config["n_points"]).to(device)
-
-    ply_path = os.path.join(base_dir, "points3D.ply") 
-    if os.path.exists(ply_path):
-        print(f"📂 [초기화] {ply_path} 파일을 로드하여 가우시안을 생성합니다.")
-        # PLY 파일에 맞춰 모델 생성 (GaussianModel 클래스에 load_ply 메서드가 있다고 가정)
-        model.load_ply(ply_path)
+    points_path = os.path.join(base_dir, "sparse", "points3D.bin")
+    xyz, rgb = None, None
+    if os.path.exists(points_path):
+        xyz, rgb = load_points3D_bin(base_dir)
+        num_points = xyz.shape[0]
+    else:
+        num_points = config["n_points"]
+    print(f"모델 초기화. 점 개수: {num_points}")
+    model = GaussianModel(num_points, xyz, rgb).to(device)
 
     # Optimizer (파라미터별 Learning Rate 차등 적용)
     optimizer = torch.optim.Adam([

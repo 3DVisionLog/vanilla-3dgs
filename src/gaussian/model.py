@@ -8,19 +8,27 @@ class GaussianModel(nn.Module):
     """
     학습 가능한 Gaussian 집합
     """
-    def __init__(self, num_points=100, degree=1):
+    def __init__(self, num_points=100, xyz=None, rgb=None, degree=1):
         super().__init__()
-        # 원래는 SfM 돌린거 point 가져와서 하겠는데.. 일단은 랜덤으로 해보자 생성형 모델 할때도 좋겠고 뭐
-        self.xyz = nn.Parameter(torch.rand(num_points, 3) * 2 - 1) # 0~1 -> -1~1
+        if xyz is not None:
+            self.xyz = nn.Parameter(torch.from_numpy(xyz).float())
+        else:
+            self.xyz = nn.Parameter((torch.rand(num_points, 3) * 2 - 1))
 
         # Σ = (RS)(RS)^{T} 용
-        self.scale_log = nn.Parameter(torch.rand(num_points, 3) - 3.0) # S: 스케일
-        self.rot_quat = nn.Parameter(torch.rand(num_points, 4)) # R: 쿼터니언 (w, x, y, z)
+        self.scale_log = nn.Parameter(torch.full((num_points, 3), -3.0))
+        rot = torch.zeros((num_points, 4))
+        rot[:, 0] = 1.0 # 쿼터니언 만들기
+        self.rot_quat = nn.Parameter(rot)
 
         # RGB(3채널) x 4개 계수(Degree 0 ~ 1)
         self.degree = degree
-        self.sh_coeffs = nn.Parameter(torch.rand(num_points, 3, (degree+1)**2))
-        self.opacity_logit = nn.Parameter(torch.rand(num_points, 1))
+        sh_coeffs = torch.zeros((num_points, 3, (self.degree + 1)**2))
+        if rgb is not None:
+            sh_coeffs[:, :, 0] = torch.from_numpy(rgb).float() / 255.0
+        self.sh_coeffs = nn.Parameter(sh_coeffs)
+        
+        self.opacity_logit = nn.Parameter(torch.full((num_points, 1), -2.197))
 
     def build_rotation(self, q): # 쿼터니언 -> 회전 행렬 (R) 변환
         q = torch.nn.functional.normalize(q) # 쿼터니언 정규화 (Unit Quaternion)
