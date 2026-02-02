@@ -108,6 +108,7 @@ def main(config_path, data_dir=None):
         radii = get_radii(cov2d)
         
         img = GaussianRasterizerFunction.apply(uv, conics, opacity, rgb, radii, H, W)
+        img = img.clamp(0.0, 1.0)
         # @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
         
         # (3) Loss 계산 (L1 + SSIM)
@@ -190,7 +191,8 @@ def main(config_path, data_dir=None):
                 # img = torch.cat(img, dim=0) # 다시 이미지 모양으로 합치기
                 # img = img.reshape(H, W, 3)  # flatten해준거 다시 펴주고~
             # @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-            rgb = (img.clamp(0, 1) * 255).byte().cpu().numpy()
+            img = img.clamp(0.0, 1.0)
+            rgb = (img * 255).byte().cpu().numpy()
     
             frames.append(Image.fromarray(rgb))
 

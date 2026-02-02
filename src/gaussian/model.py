@@ -65,8 +65,7 @@ class GaussianModel(nn.Module):
         """
         opacity = torch.sigmoid(self.opacity_logit) # 불투명도는 0~1 사이 값
         scale = torch.exp(self.scale_log) # 반지름은 양수만 가능
-        # rgb = torch.sigmoid(self.rgb)
-        rgb = torch.sigmoid(self.eval_sh(view_dirs)) # SH까지 고려
+        rgb = self.eval_sh(view_dirs)
 
         # Σ = (RS)(RS)^{T}
         S = torch.diag_embed(scale)  # RS 계산하려고 3x3 대각행렬 만듬
