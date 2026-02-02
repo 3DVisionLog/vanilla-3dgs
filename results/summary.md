@@ -12,7 +12,7 @@ opacity 초기화를 densify 끝날 때 한번만 했더니 렌더링하니까 불투명하고 그런게 많
 opacity 초기화를 1000 iter 마다 1번으로 변경함
 
 ### 04_rasterizer_opimization
-numba 기반 rasterizer를 c++/cu 기반으로 변경
+numba 기반 rasterizer를 3dgs 공식 구현과 같은 c++/cu 기반으로 변경
 학습 시간은 3:16:32 -> 18:04 ㄷㄷㄷㄷ
 
 ### 05_densify_start
@@ -24,3 +24,6 @@ numba 기반 rasterizer를 c++/cu 기반으로 변경
 ply 저장 시 SH 값이 발산하는 문제 발생!!!! superspl.at 기준으로.. SH 밴드 값을 0을 하면 그래도 색 잘보임
 뷰어에선 color가 0.5 + C0 * dc 이렇게 linear하게 표현 되는데 내 모델은 sigmoid(C0 * dc) 이렇게 표현하고 있었음
 sigmoid가 적용된게 문제인 것 같아서 forward에서의 sigmoid를 제거하고 loss 계산 전 clamp를 처리하도록 하니까 고쳐짐
+
+### 07_model_init
+3dgs 공식 구현처럼 모델 초기화 과정에서 bin을 읽어 학습에 활용

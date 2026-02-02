@@ -6,6 +6,7 @@ import argparse
 import numpy as np
 from tqdm import tqdm
 from PIL import Image
+import glob
 
 from src.utils import set_seed
 from src.data.loader import load_data
@@ -34,7 +35,9 @@ def main(config_path, data_dir=None):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     base_dir = data_dir or config["base_dir"]
-    datas = load_data(base_dir)
+    if glob.glob(os.path.join(base_dir, "*.json")):
+        datas = load_data(base_dir, "nerf")
+    else: datas = load_data(base_dir)
     H, W, focal = datas[0]["hwf"]
     H, W = int(H), int(W)
     print(f"데이터 로딩 완료 H: {H}, W: {W}, focal: {focal}")
