@@ -1,5 +1,5 @@
 base_dir: data
-exp_name: 3dgs-e9
+exp_name: 3dgs-e10
 lambda: 0.2
 lr:
   default: 0.001

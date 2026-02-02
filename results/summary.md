@@ -1,21 +1,23 @@
-### 3dgs-e1~
+### 01_densify_test
 3dgs-e1 500->258->5482
 3dgs-e2 500->301->3968
 densify를 끝까지 안하고 중간까지만 하니까 더 안정화된 모습
 
-### 3dgs-e3~
+### 02_coordinate
 카메라 좌표계가 LHS로 되어있어서 렌더링시 불투명하게 속이 비친 모습으로 나왔는데
 RHS로 바꾸니 이게 수정됨
 
-### 3dgs-e5~
+### 03_opacity_freqyency
 opacity 초기화를 densify 끝날 때 한번만 했더니 렌더링하니까 불투명하고 그런게 많이 보였음
 opacity 초기화를 1000 iter 마다 1번으로 변경함
 
-### 3dgs-e7
+### 04_rasterizer_opimization
 numba 기반 rasterizer를 c++/cu 기반으로 변경
 학습 시간은 3:16:32 -> 18:04 ㄷㄷㄷㄷ
 
-### 3dgs-e8~
+### 05_densify_start
 0.1*iters 부터 시작하던 densify 과정을 일괄적으로 500 step에서 시작하는 것을 변경
 간격도 100 iter로 조정!
 3dgs-e6에 비해 점 개수 2만->8만으로 늘고 최종 학습 시간은 50분
+
+### 06_ply_render
