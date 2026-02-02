@@ -21,3 +21,6 @@ numba 기반 rasterizer를 c++/cu 기반으로 변경
 3dgs-e6에 비해 점 개수 2만->8만으로 늘고 최종 학습 시간은 50분
 
 ### 06_ply_render
+ply 저장 시 SH 값이 발산하는 문제 발생!!!! superspl.at 기준으로.. SH 밴드 값을 0을 하면 그래도 색 잘보임
+뷰어에선 color가 0.5 + C0 * dc 이렇게 linear하게 표현 되는데 내 모델은 sigmoid(C0 * dc) 이렇게 표현하고 있었음
+sigmoid가 적용된게 문제인 것 같아서 forward에서의 sigmoid를 제거하고 loss 계산 전 clamp를 처리하도록 하니까 고쳐짐
