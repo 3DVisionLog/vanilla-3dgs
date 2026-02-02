@@ -53,8 +53,10 @@ class GaussianRenderer(nn.Module):
             img = render(_, g2d, H, W)
 
         return img.clamp(0.0, 1.0)
-    
-    def densify(self, scene_extent, config, step):
+
+    def densify(self, scene_extent):
+        old_params = self.model.get_params()
+
         new_gaussian = densify_and_prune(
             self.model,
             min_opacity=0.01,
@@ -64,17 +66,21 @@ class GaussianRenderer(nn.Module):
 
         self.model.replace_gaussians(new_gaussian)
 
-        param_list = [
-            {'params': [self.model.xyz], 'lr': config["lr"]["xyz"], 'initial_lr': config["lr"]["xyz"], 'name': 'xyz'},
-            {'params': [self.model.sh_coeffs], 'lr': config["lr"]["sh_coeffs"], 'initial_lr': config["lr"]["sh_coeffs"], 'name': 'sh'},
-            {'params': [self.model.opacity_logit], 'lr': config["lr"]["opacity_logit"], 'initial_lr': config["lr"]["opacity_logit"], 'name': 'opacity'},
-            {'params': [self.model.scale_log], 'lr': config["lr"]["scale_log"], 'initial_lr': config["lr"]["scale_log"], 'name': 'scale'},
-            {'params': [self.model.rot_quat], 'lr': config["lr"]["rot_quat"], 'initial_lr': config["lr"]["rot_quat"], 'name': 'rotation'},
-        ]
-        self.optimizer = torch.optim.Adam(param_list, lr=config["lr"]["default"])
-        self.scheduler = torch.optim.lr_scheduler.StepLR(
-            self.optimizer,
-            step_size=1000,
-            gamma=0.5,
-            last_epoch=step 
-        )
+        new_params = self.model.get_params()
+
+        for old, new in zip(old_params, new_params):
+            self.replace_params(old, new)
+
+    def replace_params(self, old, new):
+        for group in self.optimizer.param_groups:
+            for i, p in enumerate(group['params']):
+                if p is old:
+                    # 1. param_groups 교체
+                    group['params'][i] = new
+
+                    # 2. State 초기화
+                    # Adam이 다음 step() 때 알아서 0부터 다시 계산 시작함
+                    if old in self.optimizer.state:
+                        del self.optimizer.state[old]
+                    self.optimizer.state[new] = {} # 빈 state 할당.. 딕셔너리여야함!!
+                    return  # 찾았으면 끝
